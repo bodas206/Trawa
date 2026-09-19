@@ -65,6 +65,69 @@ function providerFor(model: any, providers: any[]) { return providers.find((p: a
 function providerKey(p: any) { return p ? Deno.env.get(p.secret_env) || "" : ""; }
 function modelOptions(m: any) { return m.options && typeof m.options === "object" ? m.options : {}; }
 
+function isRetryableProviderError(error: unknown) {
+  const msg = error instanceof Error ? error.message : String(error);
+  return /(HTTP (408|409|425|429|500|502|503|504)|aborted|timeout|timed out|network|fetch failed|missing stream body)/i.test(msg);
+}
+
+async function healthFor(modelId: string) {
+  const { data, error } = await admin.from("ai_model_health").select("model_id,consecutive_failures,cooldown_until,last_error,last_failure_at,last_success_at").eq("model_id", modelId).maybeSingle();
+  if (error) throw error;
+  return data || { model_id: modelId, consecutive_failures: 0, cooldown_until: null };
+}
+
+async function modelCoolingDown(modelId: string) {
+  const h = await healthFor(modelId);
+  return Boolean(h.cooldown_until && new Date(h.cooldown_until).getTime() > Date.now());
+}
+
+async function markModelSuccess(modelId: string) {
+  await admin.from("ai_model_health").upsert({
+    model_id: modelId,
+    consecutive_failures: 0,
+    cooldown_until: null,
+    last_error: null,
+    last_success_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "model_id" });
+}
+
+async function markModelFailure(modelId: string, error: unknown) {
+  const previous = await healthFor(modelId);
+  const failures = Number(previous.consecutive_failures || 0) + 1;
+  const cooldownSeconds = Math.min(600, Math.max(30, 30 * (2 ** Math.min(failures - 1, 4))));
+  await admin.from("ai_model_health").upsert({
+    model_id: modelId,
+    consecutive_failures: failures,
+    cooldown_until: new Date(Date.now() + cooldownSeconds * 1000).toISOString(),
+    last_error: (error instanceof Error ? error.message : String(error)).slice(0, 500),
+    last_failure_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "model_id" });
+}
+
+async function runModelOnce(p: any, m: any, messages: any[], runtime: any) {
+  let candidate = "";
+  const it = p.protocol === "gemini" ? geminiStream(p, m, messages, runtime) : openAiStream(p, m, messages, runtime);
+  for await (const d of it) candidate += d;
+  if (!candidate.trim()) throw new Error("Empty provider response");
+  return candidate;
+}
+
+async function runModelWithRetry(p: any, m: any, messages: any[], runtime: any) {
+  let last: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await runModelOnce(p, m, messages, runtime);
+    } catch (e) {
+      last = e;
+      if (attempt === 0 && isRetryableProviderError(e)) continue;
+      throw e;
+    }
+  }
+  throw last instanceof Error ? last : new Error(String(last || "Provider failed"));
+}
+
 async function* openAiStream(p: any, m: any, messages: any[], runtime: any) {
   const key = providerKey(p); if (!key) throw new Error(`${p.slug}: secret not configured`);
   const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), p.timeout_ms || 90000);
@@ -117,14 +180,14 @@ async function streamChat(req:Request,user:any){
   const attachEnabled=cfg.runtime.attachment_context_enabled && cfg.flags.attachment_context?.enabled !== false; const attach=attachEnabled?await attachmentContext(user.id,body.attachments||[]):"";
   const system=`${cfg.prompt}\n${contextBlock(context,web)}`; const effective=attach?`${message}\n\n${attach}`:message; const msgs=messagesFor(history.slice(-Number(cfg.runtime.max_history||60)),effective,system);
   if(!temporary){const row={id:crypto.randomUUID(),user_id:user.id,conversation_id:conversationId,role:"user",content:message,attachments:body.attachments||[],metadata:{clientMessageId:body.clientMessageId||null}};const ins=await admin.from("messages").insert(row);if(ins.error)throw ins.error;const ids=Array.isArray(body.attachments)?body.attachments.map((a:any)=>clean(a.remoteId)).filter(Boolean):[];if(ids.length)await admin.from("attachments").update({conversation_id:conversationId,message_id:row.id}).eq("user_id",user.id).in("id",ids);}
-  const enc=new TextEncoder();const stream=new ReadableStream({async start(controller){const emit=(d:any)=>controller.enqueue(enc.encode(`data: ${JSON.stringify(d)}\n\n`));emit({type:"status",phase:"thinking"});let final="",used:any=null,last="";try{for(const m of cfg.models){const p=providerFor(m,cfg.providers);if(!p||!p.enabled)continue;try{let candidate="";const it=p.protocol==="gemini"?geminiStream(p,m,msgs,cfg.runtime):openAiStream(p,m,msgs,cfg.runtime);for await(const d of it)candidate+=d;if(!candidate.trim())throw new Error("Empty provider response");final=candidate;used={provider:p.slug,model:m.model};break}catch(e){last=e instanceof Error?e.message:String(e);}}if(!final)throw new Error(last||"All configured AI models are unavailable");if(!temporary){const ins=await admin.from("messages").insert({id:crypto.randomUUID(),user_id:user.id,conversation_id:conversationId,role:"assistant",content:final,citations:web.map((x:any)=>({title:x.title,url:x.url})),metadata:used});if(ins.error)throw ins.error;await admin.from("conversations").update({updated_at:new Date().toISOString(),title:conversation.title==="New Conversation"?message.slice(0,60):conversation.title}).eq("id",conversationId).eq("user_id",user.id);}await admin.from("agent_runs").insert({id:crypto.randomUUID(),user_id:user.id,conversation_id:conversationId,task_type:web.length?"web_chat":"chat",provider_used:used.provider,model_used:used.model,status:"completed"});const chunks=final.match(/.{1,24}(?:\s+|$)/gs)||[final];for(const c of chunks)emit({delta:c});emit({content:final,provider:used.provider,model:used.model,citations:web.map((x:any)=>({title:x.title,url:x.url}))});emit({done:true});}catch(e){emit({error:e instanceof Error?e.message:"AI service unavailable"});}finally{controller.close();}}});return new Response(stream,{headers:{...CORS,"Content-Type":"text/event-stream; charset=utf-8","Connection":"keep-alive","X-Accel-Buffering":"no"}});
+  const enc=new TextEncoder();const stream=new ReadableStream({async start(controller){const emit=(d:any)=>controller.enqueue(enc.encode(`data: ${JSON.stringify(d)}\n\n`));emit({type:"status",phase:"thinking"});let final="",used:any=null,last="";try{for(const m of cfg.models){const p=providerFor(m,cfg.providers);if(!p||!p.enabled)continue;try{if(await modelCoolingDown(m.id))continue;final=await runModelWithRetry(p,m,msgs,cfg.runtime);used={provider:p.slug,model:m.model};await markModelSuccess(m.id);break}catch(e){last=e instanceof Error?e.message:String(e);await markModelFailure(m.id,e);}}if(!final)throw new Error(last||"All configured AI models are unavailable");if(!temporary){const ins=await admin.from("messages").insert({id:crypto.randomUUID(),user_id:user.id,conversation_id:conversationId,role:"assistant",content:final,citations:web.map((x:any)=>({title:x.title,url:x.url})),metadata:used});if(ins.error)throw ins.error;await admin.from("conversations").update({updated_at:new Date().toISOString(),title:conversation.title==="New Conversation"?message.slice(0,60):conversation.title}).eq("id",conversationId).eq("user_id",user.id);}await admin.from("agent_runs").insert({id:crypto.randomUUID(),user_id:user.id,conversation_id:conversationId,task_type:web.length?"web_chat":"chat",provider_used:used.provider,model_used:used.model,status:"completed",request_id:body.clientMessageId||null});const chunks=final.match(/.{1,24}(?:\s+|$)/gs)||[final];for(const c of chunks)emit({delta:c});emit({content:final,provider:used.provider,model:used.model,citations:web.map((x:any)=>({title:x.title,url:x.url}))});emit({done:true});}catch(e){emit({error:e instanceof Error?e.message:"AI service unavailable"});}finally{controller.close();}}});return new Response(stream,{headers:{...CORS,"Content-Type":"text/event-stream; charset=utf-8","Connection":"keep-alive","X-Accel-Buffering":"no"}});
 }
 
 async function isAdmin(userId:string){const {data}=await admin.from("ai_admins").select("user_id").eq("user_id",userId).eq("enabled",true).maybeSingle();return Boolean(data);}
 async function adminConfig(req:Request,user:any){if(!(await isAdmin(user.id)))return json({error:"Admin access required"},403);if(req.method==="GET"){const c=await loadAiConfig();return json({runtime:c.runtime,prompt:c.prompt,providers:c.providers.map((p:any)=>({...p,secret_configured:Boolean(providerKey(p))})),models:c.models,routes:(await admin.from("ai_routes").select("*")).data||[],flags:c.flags});}const b=await req.json();if(req.method==="PUT"){if(b.runtime)await admin.from("ai_runtime_config").update({...b.runtime,version:(Number(b.runtime.version)||1)+1,updated_at:new Date().toISOString()}).eq("id",true);if(typeof b.prompt==="string")await admin.from("ai_prompts").update({content:b.prompt,version:(Number(b.promptVersion)||1)+1,updated_at:new Date().toISOString()}).eq("prompt_key","base_system");if(Array.isArray(b.providers))for(const p of b.providers){await admin.from("ai_providers").upsert({id:p.id||undefined,slug:p.slug,display_name:p.display_name,protocol:p.protocol,endpoint:p.endpoint,secret_env:p.secret_env,enabled:p.enabled!==false,priority:p.priority??100,timeout_ms:p.timeout_ms??90000,config:p.config||{},updated_at:new Date().toISOString()},{onConflict:"slug"});}if(Array.isArray(b.models))for(const m of b.models){await admin.from("ai_models").upsert({id:m.id||undefined,provider_id:m.provider_id,model:m.model,display_name:m.display_name||m.model,enabled:m.enabled!==false,priority:m.priority??100,capabilities:m.capabilities||{},options:m.options||{},updated_at:new Date().toISOString()},{onConflict:"provider_id,model"});}if(b.route?.model_chain)await admin.from("ai_routes").upsert({route_key:"default",enabled:b.route.enabled!==false,priority:b.route.priority??100,model_chain:b.route.model_chain,rules:b.route.rules||{},updated_at:new Date().toISOString()},{onConflict:"route_key"});if(b.flags&&typeof b.flags==="object")for(const [k,v] of Object.entries(b.flags as any))await admin.from("ai_feature_flags").upsert({flag_key:k,enabled:Boolean((v as any).enabled),config:(v as any).config||{},updated_at:new Date().toISOString()},{onConflict:"flag_key"});return json({ok:true,config:await loadAiConfig()});}return json({error:"Method not allowed"},405);}
 
 async function handle(req:Request){if(req.method==="OPTIONS")return new Response(null,{status:204,headers:CORS});const path=new URL(req.url).pathname.replace(/\/+$/)||"/";
-  if(req.method==="GET"&&(path.endsWith("/health")||path.endsWith("/trawa-3ar-api")||path==="/health")){const c=await loadAiConfig();return json({status:"healthy",identity:"3AR V1 Pro",backend:"Supabase Edge",controlPlane:"database",configVersion:c.runtime.version,models:c.models.map((m:any)=>({provider:providerFor(m,c.providers)?.slug,model:m.model})),webSearch:Boolean(Deno.env.get("TAVILY_API_KEY"))&&c.runtime.web_search_enabled,timestamp:new Date().toISOString()});}
+  if(req.method==="GET"&&(path.endsWith("/health")||path.endsWith("/trawa-3ar-api")||path==="/health")){const c=await loadAiConfig();return json({status:"healthy",identity:"3AR V1 Pro",backend:"Supabase Edge",controlPlane:"database",configVersion:c.runtime.version,providers:c.providers.map((p:any)=>({provider:p.slug,enabled:Boolean(p.enabled),secretConfigured:Boolean(providerKey(p)),endpoint:p.endpoint})),models:c.models.map((m:any)=>({id:m.id,provider:providerFor(m,c.providers)?.slug,model:m.model,enabled:Boolean(m.enabled)})),webSearch:Boolean(Deno.env.get("TAVILY_API_KEY"))&&c.runtime.web_search_enabled,timestamp:new Date().toISOString()});}
   if(path.endsWith("/v1/auth/send-otp")&&req.method==="POST"){const b=await req.json();const email=clean(b.email).toLowerCase();if(!email)return json({error:"Email is required"},400);const client=await publicAuthClient();const {error}=await client.auth.signInWithOtp({email,options:{shouldCreateUser:true}});if(error)return json({error:error.message},400);return json({ok:true,requiresOtp:true});}
   if(path.endsWith("/v1/auth/verify-otp")&&req.method==="POST"){const b=await req.json();const email=clean(b.email).toLowerCase();const token=clean(b.token);if(!email||!/^[0-9]{6}$/.test(token))return json({error:"Email and 6-digit code are required"},400);const client=await publicAuthClient();const {data,error}=await client.auth.verifyOtp({email,token,type:"email"});if(error||!data.session||!data.user)return json({error:error?.message||"Invalid or expired code"},401);const name=clean(b.name);if(name)await admin.auth.admin.updateUserById(data.user.id,{user_metadata:{...(data.user.user_metadata||{}),full_name:name}});const fresh=(await admin.auth.getUser(data.session.access_token)).data.user||data.user;return json({token:data.session.access_token,refreshToken:data.session.refresh_token,expiresAt:Date.now()+data.session.expires_in*1000,user:userPayload(fresh)});}
   if(path.endsWith("/v1/auth/login")&&req.method==="POST"){const b=await req.json();const client=await publicAuthClient();const {data,error}=await client.auth.signInWithPassword({email:clean(b.email),password:clean(b.password)});if(error||!data.session||!data.user)return json({error:error?.message||"Invalid credentials"},401);return json({token:data.session.access_token,refreshToken:data.session.refresh_token,expiresAt:Date.now()+data.session.expires_in*1000,user:userPayload(data.user)});}

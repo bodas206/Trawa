@@ -359,36 +359,6 @@ private fun AssistantMessageItem(
           }
         }
 
-        // Generated artifacts preview
-        message.artifacts.forEach { artifact ->
-          Spacer(modifier = Modifier.height(8.dp))
-          Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-          ) {
-            Row(
-              modifier = Modifier.padding(12.dp),
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Icon(
-                imageVector = if (artifact.type == ArtifactType.GENERATED_IMAGE) Icons.Default.Image else Icons.AutoMirrored.Filled.InsertDriveFile,
-                contentDescription = null,
-                tint = TrawaCyan,
-                modifier = Modifier.size(24.dp)
-              )
-              Spacer(modifier = Modifier.width(10.dp))
-              Column(modifier = Modifier.weight(1f)) {
-                Text(text = artifact.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                Text(text = artifact.mimeType, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-              }
-              IconButton(onClick = {}) {
-                Icon(Icons.Default.Download, contentDescription = "Download")
-              }
-            }
-          }
-        }
-      }
     }
 
     // Assistant Action Bar

@@ -22,7 +22,6 @@ data class ChatMessage(
   val createdAt: Long = System.currentTimeMillis(),
   val status: MessageStatus = MessageStatus.SENT,
   val attachments: List<Attachment> = emptyList(),
-  val artifacts: List<GeneratedArtifact> = emptyList(),
   val clientMessageId: String? = null,
   val serverMessageId: String? = null,
   val errorMessage: String? = null

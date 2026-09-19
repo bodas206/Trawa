@@ -190,13 +190,6 @@ class ChatViewModel(
               } else msg
             }
           }
-          is ChatStreamEvent.ArtifactEvent -> {
-            _messages.value = _messages.value.map { msg ->
-              if (msg.id == assistantMessageId) {
-                msg.copy(artifacts = msg.artifacts + event.artifact)
-              } else msg
-            }
-          }
           is ChatStreamEvent.MessageEnd -> {
             val finalContent = if (event.fullContent.isNotBlank()) event.fullContent else streamedBuilder.toString()
             _messages.value = _messages.value.map { msg ->

@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 sealed interface AuthUiState {
   data object CheckingSession : AuthUiState
   data object Unauthenticated : AuthUiState
+  data class AwaitingOtp(val email: String, val name: String, val isSignUp: Boolean) : AuthUiState
   data class Authenticated(val session: Session) : AuthUiState
   data class Loading(val message: String = "Signing in to TRAWA...") : AuthUiState
   data class Error(val message: String) : AuthUiState
@@ -46,40 +47,50 @@ class AuthViewModel(
     }
   }
 
-  fun login(email: String, pass: String) {
+  fun requestOtp(email: String, name: String, isSignUp: Boolean) {
     val effectiveEmail = email.trim()
-    val effectivePass = pass
-
+    if (!android.util.Patterns.EMAIL_ADDRESS.matcher(effectiveEmail).matches()) {
+      _uiState.value = AuthUiState.Error("Please enter a valid email address.")
+      return
+    }
+    if (isSignUp && name.trim().isBlank()) {
+      _uiState.value = AuthUiState.Error("Please enter your name.")
+      return
+    }
     viewModelScope.launch {
-      _uiState.value = AuthUiState.Loading()
-      val result = authRepository.login(effectiveEmail, effectivePass)
+      _uiState.value = AuthUiState.Loading("Sending your 6-digit verification code...")
+      val result = authRepository.sendOtp(effectiveEmail)
       result.fold(
-        onSuccess = { session ->
-          _uiState.value = AuthUiState.Authenticated(session)
-        },
-        onFailure = { error ->
-          _uiState.value = AuthUiState.Error(error.localizedMessage ?: "Authentication failed. Please check connection.")
-        }
+        onSuccess = { _uiState.value = AuthUiState.AwaitingOtp(effectiveEmail, name.trim(), isSignUp) },
+        onFailure = { error -> _uiState.value = AuthUiState.Error(error.localizedMessage ?: "Could not send verification code.") }
       )
     }
   }
 
-  fun signUp(email: String, pass: String, name: String) {
-    val effectiveEmail = email.trim()
-    val effectivePass = pass
-    if (effectiveEmail.isBlank() || effectivePass.isBlank()) {
-      _uiState.value = AuthUiState.Error("Email and password are required.")
+  fun verifyOtp(email: String, code: String, name: String, isSignUp: Boolean) {
+    val effectiveCode = code.trim()
+    if (!Regex("^[0-9]{6}$").matches(effectiveCode)) {
+      _uiState.value = AuthUiState.Error("Enter the 6-digit verification code.")
       return
     }
     viewModelScope.launch {
-      _uiState.value = AuthUiState.Loading("Creating your TRAWA account...")
-      val result = authRepository.signUp(effectiveEmail, effectivePass, name.trim())
+      _uiState.value = AuthUiState.Loading("Verifying your TRAWA account...")
+      val result = authRepository.verifyOtp(email.trim(), effectiveCode, name.trim())
       result.fold(
-        onSuccess = { session ->
-          if (session != null) _uiState.value = AuthUiState.Authenticated(session)
-          else _uiState.value = AuthUiState.Error("Account created. Check your email to confirm the account, then sign in.")
-        },
-        onFailure = { error -> _uiState.value = AuthUiState.Error(error.localizedMessage ?: "Could not create account.") }
+        onSuccess = { session -> _uiState.value = AuthUiState.Authenticated(session) },
+        onFailure = { error -> _uiState.value = AuthUiState.Error(error.localizedMessage ?: "Invalid or expired verification code.") }
+      )
+    }
+  }
+
+  fun resendOtp(email: String) {
+    val current = _uiState.value as? AuthUiState.AwaitingOtp
+    viewModelScope.launch {
+      _uiState.value = AuthUiState.Loading("Sending a new verification code...")
+      val result = authRepository.sendOtp(email.trim())
+      result.fold(
+        onSuccess = { _uiState.value = AuthUiState.AwaitingOtp(email.trim(), current?.name.orEmpty(), current?.isSignUp ?: false) },
+        onFailure = { error -> _uiState.value = AuthUiState.Error(error.localizedMessage ?: "Could not resend verification code.") }
       )
     }
   }
@@ -102,6 +113,10 @@ class AuthViewModel(
         }
       )
     }
+  }
+
+  fun useDifferentEmail() {
+    _uiState.value = AuthUiState.Unauthenticated
   }
 
   fun clearError() {

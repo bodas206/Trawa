@@ -25,6 +25,8 @@ interface TrawaApiClient {
   // Authentication
   suspend fun login(email: String, password: String): Result<Session>
   suspend fun signUp(email: String, password: String, name: String): Result<Session?>
+  suspend fun sendOtp(email: String): Result<Unit>
+  suspend fun verifyOtp(email: String, code: String, name: String): Result<Session>
   suspend fun logout(): Result<Unit>
   suspend fun getCurrentSession(): Session?
   suspend fun resetPassword(email: String): Result<Unit>

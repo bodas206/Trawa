@@ -128,6 +128,36 @@ class TrawaApiClientImpl(
     } catch (e: Exception) { Result.failure(e) }
   }
 
+  override suspend fun sendOtp(email: String): Result<Unit> = withContext(Dispatchers.IO) {
+    try {
+      if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches()) return@withContext Result.failure(IllegalArgumentException("Please enter a valid email address."))
+      val body = JSONObject().put("email", email.trim())
+      val request = Request.Builder().url("$baseUrl/v1/auth/send-otp")
+        .post(body.toString().toRequestBody("application/json".toMediaType())).build()
+      okHttpClient.newCall(request).execute().use { response ->
+        val raw = response.body?.string().orEmpty()
+        if (!response.isSuccessful) return@withContext Result.failure(Exception(JSONObject(raw).optString("error", "Could not send verification code (${response.code})")))
+        Result.success(Unit)
+      }
+    } catch (e: Exception) { Result.failure(e) }
+  }
+
+  override suspend fun verifyOtp(email: String, code: String, name: String): Result<Session> = withContext(Dispatchers.IO) {
+    try {
+      val body = JSONObject().apply { put("email", email.trim()); put("token", code.trim()); put("name", name.trim()) }
+      val request = Request.Builder().url("$baseUrl/v1/auth/verify-otp")
+        .post(body.toString().toRequestBody("application/json".toMediaType())).build()
+      okHttpClient.newCall(request).execute().use { response ->
+        val raw = response.body?.string().orEmpty(); val json = JSONObject(raw)
+        if (!response.isSuccessful) return@withContext Result.failure(Exception(json.optString("error", "Verification failed (${response.code})")))
+        val u = json.getJSONObject("user")
+        val session = Session(json.getString("token"), User(u.getString("id"), u.optString("email", email), u.optString("name", name.ifBlank { email.substringBefore("@") })), json.optLong("expiresAt", System.currentTimeMillis()+3600000), json.optString("refreshToken").takeIf { it.isNotBlank() })
+        persistSession(session)
+        Result.success(session)
+      }
+    } catch (e: Exception) { Result.failure(e) }
+  }
+
   override suspend fun logout(): Result<Unit> = withContext(Dispatchers.IO) { persistSession(null); Result.success(Unit) }
 
   override suspend fun getCurrentSession(): Session? = withContext(Dispatchers.IO) {

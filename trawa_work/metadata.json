@@ -1,0 +1,6 @@
+{
+  "name": "TRAWA",
+  "description": "TRAWA with 3AR V1 Pro AI",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

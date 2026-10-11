@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Patrix</string>
+    <string name="telegram_url">https://web.telegram.org/k/#@Just_AbDoS</string>
+    <string name="login_title">Patrix</string>
+    <string name="login_subtitle">أدخل المفتاح لبدء الجلسة</string>
+    <string name="key_hint">مفتاح الوصول</string>
+    <string name="login">دخول</string>
+    <string name="get_key">الحصول على مفتاح</string>
+    <string name="main_title">Patrix Version 1</string>
+    <string name="game_name">Free Fire</string>
+    <string name="game_variant">الإصدار 1.132.1 • دعم 32/64 bit</string>
+    <string name="start">Start</string>
+    <string name="connected_device">الجهاز المتصل</string>
+    <string name="key_status">المفتاح</string>
+    <string name="expiry">الانتهاء</string>
+    <string name="not_connected">غير متصل</string>
+    <string name="validating">جارٍ التحقق…</string>
+    <string name="invalid_key">المفتاح غير صالح أو منتهي</string>
+</resources>

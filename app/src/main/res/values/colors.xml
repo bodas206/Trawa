@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="patrix_bg">#10130D</color>
+    <color name="patrix_surface">#20251A</color>
+    <color name="patrix_lime">#C8F36A</color>
+    <color name="patrix_pink">#FF8B9E</color>
+    <color name="patrix_purple">#9C5BE7</color>
+    <color name="patrix_text">#FFF8F3</color>
+    <color name="patrix_muted">#B9BBAF</color>
+    <color name="patrix_error">#FF7A7A</color>
+</resources>

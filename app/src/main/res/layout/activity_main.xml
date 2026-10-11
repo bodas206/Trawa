@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:fillViewport="true" android:background="@color/patrix_bg">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:padding="20dp" android:gravity="center_horizontal">
+        <ImageView android:id="@+id/logo" android:layout_width="76dp" android:layout_height="76dp"
+            android:layout_marginTop="22dp" android:src="@drawable/patrix_logo" android:scaleType="centerCrop" android:contentDescription="Patrix logo" />
+
+        <LinearLayout android:id="@+id/login_panel" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:padding="20dp" android:layout_marginTop="22dp" android:background="@drawable/patrix_card">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/login_title"
+                android:textColor="@color/patrix_lime" android:textSize="30sp" android:textStyle="bold" android:gravity="center" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/login_subtitle"
+                android:textColor="@color/patrix_muted" android:textSize="15sp" android:gravity="center" android:layout_marginTop="6dp" />
+            <EditText android:id="@+id/key_input" android:layout_width="match_parent" android:layout_height="54dp"
+                android:layout_marginTop="24dp" android:hint="@string/key_hint" android:inputType="textPassword" android:textColor="@color/patrix_text"
+                android:textColorHint="@color/patrix_muted" android:background="@drawable/patrix_input" android:singleLine="true" />
+            <Button android:id="@+id/login_button" android:layout_width="match_parent" android:layout_height="54dp"
+                android:layout_marginTop="14dp" android:text="@string/login" android:textColor="@color/patrix_bg" android:textStyle="bold"
+                android:background="@drawable/patrix_button" />
+            <Button android:id="@+id/telegram_button" android:layout_width="match_parent" android:layout_height="48dp"
+                android:layout_marginTop="8dp" android:text="@string/get_key" android:textColor="@color/patrix_lime" android:backgroundTint="@color/patrix_surface" />
+            <TextView android:id="@+id/login_status" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textColor="@color/patrix_error" android:textSize="13sp" android:gravity="center" android:layout_marginTop="12dp" />
+        </LinearLayout>
+
+        <LinearLayout android:id="@+id/main_panel" android:visibility="gone" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:layout_marginTop="22dp">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/main_title"
+                android:textColor="@color/patrix_lime" android:textSize="28sp" android:textStyle="bold" android:gravity="center" />
+            <ImageView android:layout_width="match_parent" android:layout_height="190dp" android:layout_marginTop="16dp"
+                android:src="@drawable/free_fire" android:scaleType="centerCrop" android:contentDescription="Free Fire" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/game_name"
+                android:textColor="@color/patrix_text" android:textSize="22sp" android:textStyle="bold" android:gravity="center" android:layout_marginTop="16dp" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/game_variant"
+                android:textColor="@color/patrix_muted" android:textSize="14sp" android:gravity="center" android:layout_marginTop="4dp" />
+            <Button android:id="@+id/start_button" android:layout_width="match_parent" android:layout_height="62dp"
+                android:layout_marginTop="22dp" android:text="@string/start" android:textColor="@color/patrix_bg" android:textSize="18sp" android:textStyle="bold"
+                android:background="@drawable/patrix_button" />
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"
+                android:layout_marginTop="18dp" android:padding="18dp" android:background="@drawable/patrix_card">
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/connected_device" android:textColor="@color/patrix_lime" android:textStyle="bold" />
+                <TextView android:id="@+id/device_value" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/not_connected" android:textColor="@color/patrix_text" android:layout_marginTop="5dp" />
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/key_status" android:textColor="@color/patrix_lime" android:textStyle="bold" android:layout_marginTop="16dp" />
+                <TextView android:id="@+id/key_value" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/patrix_text" android:layout_marginTop="5dp" />
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/expiry" android:textColor="@color/patrix_lime" android:textStyle="bold" android:layout_marginTop="16dp" />
+                <TextView android:id="@+id/expiry_value" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/patrix_text" android:layout_marginTop="5dp" />
+                <TextView android:id="@+id/main_status" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/patrix_muted" android:layout_marginTop="16dp" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>
